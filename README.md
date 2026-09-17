@@ -70,7 +70,7 @@ Kotoba Float accepts the key through its connection UI and stores it in Windows 
 Tagged builds are published on the [GitHub Releases page](https://github.com/wasmake/kotoba-float/releases). Download the asset for your platform:
 
 - **Windows:** `.exe` NSIS installer or `.msi`
-- **macOS:** universal `.dmg` containing Intel and Apple Silicon code
+- **macOS:** architecture-specific `.dmg` for Apple Silicon or Intel
 - **Linux:** `.AppImage` or Debian `.deb`
 
 The initial release artifacts are unsigned. Until signing certificates are configured:
@@ -224,7 +224,7 @@ npm run build
 npm run desktop:build
 ```
 
-Packaged artifacts are written beneath `src-tauri/target/release/bundle/`. Pushing a version tag such as `v0.1.0` runs `.github/workflows/release.yml` and publishes Windows, universal macOS, and Linux installers as a GitHub prerelease.
+Packaged artifacts are written beneath `src-tauri/target/release/bundle/`. Pushing a version tag such as `v0.1.0` runs `.github/workflows/release.yml` and publishes Windows, Apple Silicon and Intel macOS, and Linux installers as a GitHub prerelease.
 
 ### Architecture
 
