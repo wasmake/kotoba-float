@@ -396,7 +396,7 @@ mod platform {
                         &self.vad,
                         &self.output,
                         48000,
-                        buffer.number_channels() as u16,
+                        buffer.number_channels as u16,
                     );
                 }
             }
@@ -416,7 +416,7 @@ mod platform {
             .name("screencapturekit-audio".into())
             .spawn(
                 move || match create_stream(app, trailing, max, pre, output) {
-                    Ok(mut stream) => {
+                    Ok(stream) => {
                         if ready_tx.send(Ok(())).is_err() {
                             let _ = stream.stop_capture();
                             return;
@@ -451,9 +451,9 @@ mod platform {
             .into_iter()
             .next()
             .ok_or("No display available for system audio capture")?;
-        let filter = SCContentFilter::create()
-            .with_display(&display)
-            .with_excluding_windows(&[])
+        let filter = SCContentFilter::builder()
+            .display(&display)
+            .exclude_windows(&[])
             .build();
         let config = SCStreamConfiguration::new()
             .with_width(2)
