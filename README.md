@@ -17,16 +17,16 @@ It is built with [Tauri 2](https://v2.tauri.app/), Rust, React, and TypeScript.
 
 This repository contains a source-complete desktop application, but there are currently no signed release binaries. Build and runtime verification must be performed on Windows and macOS hardware before production distribution.
 
-| Capability | Windows | macOS |
-|---|---|---|
-| Microphones and physical inputs | Implemented | Implemented |
-| Existing virtual inputs | Implemented | Implemented |
-| Built-in system output | WASAPI loopback | ScreenCaptureKit, macOS 13+ |
-| Application-only audio | Not yet exposed | Not yet exposed |
-| Transparent/click-through overlay | Implemented | Implemented |
-| Offline demo | Implemented | Implemented |
-| OpenAI API transcription/translation | Implemented | Implemented |
-| ChatGPT subscription OAuth inference | Unsupported by OpenAI | Unsupported by OpenAI |
+| Capability | Windows | macOS | Linux |
+|---|---|---|---|
+| Microphones and physical inputs | Implemented | Implemented | Implemented |
+| Existing virtual inputs | Implemented | Implemented | Implemented |
+| Built-in system output | WASAPI loopback | ScreenCaptureKit, macOS 13+ | Use a PulseAudio/PipeWire monitor input |
+| Application-only audio | Not yet exposed | Not yet exposed | Not yet exposed |
+| Transparent/click-through overlay | Implemented | Implemented | Implemented |
+| Offline demo | Implemented | Implemented | Implemented |
+| OpenAI API transcription/translation | Implemented | Implemented | Implemented |
+| ChatGPT subscription OAuth inference | Unsupported by OpenAI | Unsupported by OpenAI | Unsupported by OpenAI |
 
 See the detailed [capability matrix](docs/CAPABILITY_MATRIX.md) for verified, untested, and unsupported behavior.
 
@@ -51,7 +51,7 @@ Silence does not trigger inference. Segments use configurable pre-roll, trailing
 - Node.js 20 or newer
 - Rust 1.77.2 or newer
 - The [Tauri 2 platform prerequisites](https://v2.tauri.app/start/prerequisites/)
-- Windows 10/11 or macOS 13+
+- Windows 10/11, macOS 13+, or a modern Linux desktop with WebKitGTK
 - An OpenAI Platform account with API billing enabled for live processing
 
 Demo mode does not need an OpenAI account or network connection.
@@ -63,7 +63,23 @@ Demo mode does not need an OpenAI account or network connection.
 3. Create an API key from the [API keys page](https://platform.openai.com/api-keys).
 4. Do not place the key in source files, environment files, or ordinary application settings.
 
-Kotoba Float accepts the key through its connection UI and stores it in Windows Credential Manager or macOS Keychain. The key is never written to the settings JSON or browser storage.
+Kotoba Float accepts the key through its connection UI and stores it in Windows Credential Manager, macOS Keychain, or the Linux Secret Service. The key is never written to the settings JSON or browser storage.
+
+## Download a release
+
+Tagged builds are published on the [GitHub Releases page](https://github.com/wasmake/kotoba-float/releases). Download the asset for your platform:
+
+- **Windows:** `.exe` NSIS installer or `.msi`
+- **macOS:** universal `.dmg` containing Intel and Apple Silicon code
+- **Linux:** `.AppImage` or Debian `.deb`
+
+The initial release artifacts are unsigned. Until signing certificates are configured:
+
+- Windows SmartScreen may require **More info → Run anyway**.
+- On macOS, Control-click the app and choose **Open**, then confirm. Do not bypass organization-managed security policy.
+- For AppImage, make it executable with `chmod +x Kotoba*.AppImage`, then run it.
+
+Checksums and code signing should be added before treating the project as a trusted production distribution.
 
 ## Installation from source
 
@@ -127,6 +143,12 @@ Press **Test source locally** and confirm that the level meter responds. The loc
 - If permission was denied, enable Kotoba Float in System Settings → Privacy & Security and restart it.
 
 See [Audio capture and permissions](docs/CAPTURE.md) for implementation details.
+
+#### Linux
+
+- Permit microphone access through the desktop portal or audio server when prompted.
+- For desktop output, select the corresponding PulseAudio/PipeWire **monitor** source if it is exposed as an input.
+- API credentials require a running Secret Service implementation such as GNOME Keyring or KWallet-compatible secret storage.
 
 ### 4. Configure subtitles
 
@@ -202,7 +224,7 @@ npm run build
 npm run desktop:build
 ```
 
-Packaged artifacts are written beneath `src-tauri/target/release/bundle/`.
+Packaged artifacts are written beneath `src-tauri/target/release/bundle/`. Pushing a version tag such as `v0.1.0` runs `.github/workflows/release.yml` and publishes Windows, universal macOS, and Linux installers as a GitHub prerelease.
 
 ### Architecture
 

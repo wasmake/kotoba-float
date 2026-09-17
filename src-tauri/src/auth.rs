@@ -25,11 +25,11 @@ pub fn capabilities(verified: u8) -> Capabilities {
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 fn entry() -> Result<keyring::Entry, String> {
     keyring::Entry::new(SERVICE, USER).map_err(|e| format!("Credential store unavailable: {e}"))
 }
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 pub fn save_api_key(value: &str) -> Result<(), String> {
     let value = value.trim();
     if !value.starts_with("sk-") || value.len() < 20 {
@@ -39,13 +39,13 @@ pub fn save_api_key(value: &str) -> Result<(), String> {
         .set_password(value)
         .map_err(|e| format!("Could not save credential: {e}"))
 }
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 pub fn load_api_key() -> Result<String, String> {
     entry()?
         .get_password()
         .map_err(|_| "No OpenAI API key is connected".into())
 }
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 pub fn clear_api_key() -> Result<(), String> {
     match entry()?.delete_credential() {
         Ok(()) => Ok(()),
@@ -54,15 +54,15 @@ pub fn clear_api_key() -> Result<(), String> {
     }
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 pub fn save_api_key(_: &str) -> Result<(), String> {
     Err("API credentials are supported only on Windows and macOS builds".into())
 }
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 pub fn load_api_key() -> Result<String, String> {
     Err("No OpenAI API key is connected".into())
 }
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 pub fn clear_api_key() -> Result<(), String> {
     Ok(())
 }
