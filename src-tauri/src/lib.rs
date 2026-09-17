@@ -388,9 +388,12 @@ fn show_overlay(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
+            log::info!("Kotoba Float desktop startup began");
+            let mut startup_warnings = Vec::new();
             let path = app.path().app_config_dir()?.join("settings.json");
             app.manage(AppState {
                 stream: Mutex::new(None),
@@ -399,7 +402,7 @@ pub fn run() {
                 settings_path: path,
                 api_verified: AtomicU8::new(0),
             });
-            WebviewWindowBuilder::new(
+            if let Err(error) = WebviewWindowBuilder::new(
                 app,
                 "overlay",
                 WebviewUrl::App("index.html?window=overlay".into()),
@@ -413,81 +416,130 @@ pub fn run() {
             .resizable(true)
             .skip_taskbar(true)
             .visible(false)
-            .build()?;
-            app.global_shortcut()
-                .on_shortcut("CommandOrControl+Shift+S", |app, _, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        if let Some(w) = app.get_webview_window("overlay") {
-                            if w.is_visible().unwrap_or(false) {
-                                let _ = w.hide();
-                            } else {
+            .build()
+            {
+                let message = format!("Overlay could not be created: {error}");
+                log::error!("{message}");
+                startup_warnings.push(message);
+            }
+            if let Err(error) =
+                app.global_shortcut()
+                    .on_shortcut("CommandOrControl+Shift+S", |app, _, event| {
+                        if event.state() == ShortcutState::Pressed {
+                            if let Some(w) = app.get_webview_window("overlay") {
+                                if w.is_visible().unwrap_or(false) {
+                                    let _ = w.hide();
+                                } else {
+                                    let _ = w.show();
+                                }
+                            }
+                        }
+                    })
+            {
+                let message = format!("Show/hide shortcut unavailable: {error}");
+                log::error!("{message}");
+                startup_warnings.push(message);
+            }
+            if let Err(error) =
+                app.global_shortcut()
+                    .on_shortcut("CommandOrControl+Shift+U", |app, _, event| {
+                        if event.state() == ShortcutState::Pressed {
+                            if let Some(w) = app.get_webview_window("overlay") {
+                                let _ = w.set_ignore_cursor_events(false);
                                 let _ = w.show();
                             }
                         }
-                    }
-                })?;
-            app.global_shortcut()
-                .on_shortcut("CommandOrControl+Shift+U", |app, _, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        if let Some(w) = app.get_webview_window("overlay") {
-                            let _ = w.set_ignore_cursor_events(false);
-                            let _ = w.show();
+                    })
+            {
+                let message = format!("Unlock shortcut unavailable: {error}");
+                log::error!("{message}");
+                startup_warnings.push(message);
+            }
+            if let Err(error) =
+                app.global_shortcut()
+                    .on_shortcut("CommandOrControl+Shift+P", |app, _, event| {
+                        if event.state() == ShortcutState::Pressed {
+                            app.state::<AppState>().cancel();
+                            let _ = app.emit(
+                                "pipeline-status",
+                                "Paused from global shortcut · pending work cancelled",
+                            );
                         }
-                    }
-                })?;
-            app.global_shortcut()
-                .on_shortcut("CommandOrControl+Shift+P", |app, _, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        app.state::<AppState>().cancel();
-                        let _ = app.emit(
-                            "pipeline-status",
-                            "Paused from global shortcut · pending work cancelled",
-                        );
-                    }
-                })?;
-            let settings_i =
-                MenuItem::with_id(app, "settings", "Open settings", true, None::<&str>)?;
-            let overlay_i = MenuItem::with_id(
-                app,
-                "overlay",
-                "Show and unlock overlay",
-                true,
-                None::<&str>,
-            )?;
-            let stop_i = MenuItem::with_id(app, "stop", "Stop listening", true, None::<&str>)?;
-            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&settings_i, &overlay_i, &stop_i, &quit_i])?;
-            TrayIconBuilder::new()
-                .icon(
-                    app.default_window_icon()
-                        .ok_or("Missing application icon")?
-                        .clone(),
-                )
-                .menu(&menu)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "settings" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
-                    }
-                    "overlay" => {
-                        if let Some(w) = app.get_webview_window("overlay") {
-                            let _ = w.set_ignore_cursor_events(false);
-                            let _ = w.show();
-                        }
-                    }
-                    "stop" => {
-                        app.state::<AppState>().cancel();
-                        let _ = app.emit(
-                            "pipeline-status",
-                            "Stopped from tray · pending work cancelled",
-                        );
-                    }
-                    "quit" => app.exit(0),
-                    _ => {}
-                })
-                .build(app)?;
+                    })
+            {
+                let message = format!("Pause shortcut unavailable: {error}");
+                log::error!("{message}");
+                startup_warnings.push(message);
+            }
+
+            if let Some(icon) = app.default_window_icon().cloned() {
+                let tray_result = (|| -> tauri::Result<()> {
+                    let settings_i =
+                        MenuItem::with_id(app, "settings", "Open settings", true, None::<&str>)?;
+                    let overlay_i = MenuItem::with_id(
+                        app,
+                        "overlay",
+                        "Show and unlock overlay",
+                        true,
+                        None::<&str>,
+                    )?;
+                    let stop_i =
+                        MenuItem::with_id(app, "stop", "Stop listening", true, None::<&str>)?;
+                    let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                    let menu = Menu::with_items(app, &[&settings_i, &overlay_i, &stop_i, &quit_i])?;
+                    TrayIconBuilder::new()
+                        .icon(icon)
+                        .menu(&menu)
+                        .on_menu_event(|app, event| match event.id.as_ref() {
+                            "settings" => {
+                                if let Some(w) = app.get_webview_window("main") {
+                                    let _ = w.show();
+                                    let _ = w.set_focus();
+                                }
+                            }
+                            "overlay" => {
+                                if let Some(w) = app.get_webview_window("overlay") {
+                                    let _ = w.set_ignore_cursor_events(false);
+                                    let _ = w.show();
+                                }
+                            }
+                            "stop" => {
+                                app.state::<AppState>().cancel();
+                                let _ = app.emit(
+                                    "pipeline-status",
+                                    "Stopped from tray · pending work cancelled",
+                                );
+                            }
+                            "quit" => app.exit(0),
+                            _ => {}
+                        })
+                        .build(app)?;
+                    Ok(())
+                })();
+                if let Err(error) = tray_result {
+                    let message = format!("System tray unavailable: {error}");
+                    log::error!("{message}");
+                    startup_warnings.push(message);
+                }
+            } else {
+                let message = "System tray unavailable: application icon is missing".to_string();
+                log::error!("{message}");
+                startup_warnings.push(message);
+            }
+
+            if !startup_warnings.is_empty() {
+                let app = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_secs(1));
+                    let _ = app.emit(
+                        "pipeline-status",
+                        format!(
+                            "Started with limited desktop integration: {}",
+                            startup_warnings.join("; ")
+                        ),
+                    );
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

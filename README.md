@@ -81,6 +81,8 @@ The initial release artifacts are unsigned. Until signing certificates are confi
 
 Checksums and code signing should be added before treating the project as a trusted production distribution.
 
+If the desktop integration cannot initialize, Kotoba Float now keeps the main window open and records the failure in `%LOCALAPPDATA%\\app.kotobafloat.desktop\\logs` on Windows, `~/Library/Logs/app.kotobafloat.desktop` on macOS, or the application data directory on Linux.
+
 ## Installation from source
 
 ```bash
