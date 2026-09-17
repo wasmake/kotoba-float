@@ -1,10 +1,16 @@
 import { Lock, Unlock } from 'lucide-react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { Appearance, Subtitle } from '../types'
 import { backend } from '../lib/backend'
 export function Overlay({ subtitle, appearance, locked, onLock }: { subtitle?: Subtitle; appearance: Appearance; locked: boolean; onLock(v: boolean): void }) {
   const outline = `${appearance.outline}px ${appearance.outline}px 0 #000, -${appearance.outline}px -${appearance.outline}px 0 #000`
+  const drag = (event: React.MouseEvent) => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
+    event.preventDefault()
+    getCurrentWindow().startDragging().catch(() => undefined)
+  }
   return <main className={`overlay ${locked ? 'locked' : 'editing'}`} style={{ width: Math.min(appearance.width, window.innerWidth - 24), textAlign: appearance.align, opacity: appearance.opacity }}>
-    {!locked && <div className="overlay-tools" data-tauri-drag-region><span>Drag to position · resize at edges</span><button onClick={() => { backend.setLocked(true); onLock(true) }}><Lock size={14}/> Lock & click through</button></div>}
+    {!locked && <div className="overlay-tools" data-tauri-drag-region onMouseDown={drag}><span data-tauri-drag-region>Drag anywhere on this bar · resize at edges</span><button onClick={() => { backend.setLocked(true); onLock(true) }}><Lock size={14}/> Lock & click through</button></div>}
     <section className="subtitle-card" style={{ background: `rgba(9,14,22,${appearance.backingOpacity})`, textShadow: `${outline}, 0 3px ${appearance.shadow}px #000` }}>
       {!subtitle && <div className="waiting">字幕を待っています…</div>}
       {appearance.showJapanese && subtitle?.japanese && <div className="japanese" style={{ fontSize: appearance.japaneseSize, color: appearance.japaneseColor }}>{subtitle.japanese}</div>}

@@ -8,7 +8,17 @@ export interface Appearance { japaneseSize: number; romajiSize: number; translat
 export interface Settings { sourceId: string; targetLanguage: string; demoMode: boolean; transcriptionModel: string; textModel: string; trailingSilenceMs: number; maxSegmentMs: number; preRollMs: number; subtitleDurationMs: number; persistHistory: boolean; appearance: Appearance }
 
 export const DEFAULT_SETTINGS: Settings = {
-  sourceId: '', targetLanguage: 'Spanish', demoMode: true, transcriptionModel: 'gpt-4o-mini-transcribe', textModel: 'gpt-4o-mini', trailingSilenceMs: 550,
-  maxSegmentMs: 6000, preRollMs: 240, subtitleDurationMs: 7000, persistHistory: false,
-  appearance: { japaneseSize: 38, romajiSize: 19, translationSize: 25, japaneseColor: '#ffffff', romajiColor: '#9ee7f5', translationColor: '#fff1dc', opacity: 1, backingOpacity: .42, outline: 2, shadow: 8, width: 820, align: 'center', showJapanese: true, showRomaji: true, showTranslation: true },
+  sourceId: '', targetLanguage: 'Spanish', demoMode: true, transcriptionModel: 'gpt-4o-mini-transcribe', textModel: 'gpt-4.1-nano', trailingSilenceMs: 250,
+  maxSegmentMs: 2200, preRollMs: 120, subtitleDurationMs: 7000, persistHistory: false,
+  appearance: { japaneseSize: 38, romajiSize: 19, translationSize: 25, japaneseColor: '#ffffff', romajiColor: '#9ee7f5', translationColor: '#fff1dc', opacity: 1, backingOpacity: .18, outline: 2, shadow: 8, width: 820, align: 'center', showJapanese: true, showRomaji: true, showTranslation: true },
+}
+
+export const CALL_CAPTION_PRESET: Pick<Settings, 'transcriptionModel' | 'textModel' | 'trailingSilenceMs' | 'maxSegmentMs' | 'preRollMs'> = {
+  transcriptionModel: 'gpt-4o-mini-transcribe', textModel: 'gpt-4.1-nano', trailingSilenceMs: 250, maxSegmentMs: 2200, preRollMs: 120,
+}
+
+export function normalizeSettings(saved: Settings): Settings {
+  const merged = { ...DEFAULT_SETTINGS, ...saved, appearance: { ...DEFAULT_SETTINGS.appearance, ...saved.appearance } }
+  const legacyDefaults = merged.trailingSilenceMs === 550 && merged.maxSegmentMs === 6000 && merged.preRollMs === 240
+  return legacyDefaults ? { ...merged, ...CALL_CAPTION_PRESET } : merged
 }

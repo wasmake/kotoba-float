@@ -42,7 +42,7 @@ Selected audio source
   → ordered three-line overlay
 ```
 
-Silence does not trigger inference. Segments use configurable pre-roll, trailing silence, and maximum duration instead of repeatedly uploading an ever-growing recording.
+Silence does not trigger inference. The call-caption preset uses 120 ms pre-roll, 250 ms trailing silence, and 2.2-second maximum segments instead of repeatedly uploading an ever-growing recording. Transcription and translation run on separate bounded workers so translation cannot hold up the next Japanese caption.
 
 ## Requirements
 
@@ -159,12 +159,14 @@ See [Audio capture and permissions](docs/CAPTURE.md) for implementation details.
 - Toggle individual subtitle lines.
 - Adjust the translucent backing and subtitle width.
 - Tune pre-roll, trailing silence, and maximum segment duration if needed.
+- For calls and streamed talk, select **Use call-caption preset**. It uses `gpt-4o-mini-transcribe` plus the low-cost `gpt-4.1-nano` text model.
 
 ### 5. Position the overlay
 
 1. Click **Preview overlay**.
-2. Drag and resize the frameless window while it is unlocked.
-3. Click **Lock & click through** when positioned.
+2. Click **Unlock overlay**, then drag the native window using the bar above the captions.
+3. Resize the frameless window at its edges while it is unlocked.
+4. Click **Lock & click through** when positioned.
 
 Locked mode allows clicks to reach the application underneath. Window size and position are restored between launches.
 

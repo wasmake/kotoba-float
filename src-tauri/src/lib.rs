@@ -75,15 +75,15 @@ fn start_session(
     let trailing = settings
         .get("trailingSilenceMs")
         .and_then(|v| v.as_u64())
-        .unwrap_or(550);
+        .unwrap_or(250);
     let max = settings
         .get("maxSegmentMs")
         .and_then(|v| v.as_u64())
-        .unwrap_or(6000);
+        .unwrap_or(2200);
     let pre = settings
         .get("preRollMs")
         .and_then(|v| v.as_u64())
-        .unwrap_or(240);
+        .unwrap_or(120);
     let output = if local_only {
         None
     } else {
@@ -101,7 +101,7 @@ fn start_session(
         let text_model = settings
             .get("textModel")
             .and_then(|v| v.as_str())
-            .unwrap_or("gpt-4o-mini")
+            .unwrap_or("gpt-4.1-nano")
             .to_string();
         let target = settings
             .get("targetLanguage")
@@ -143,13 +143,77 @@ fn spawn_pipeline(
 ) -> std::sync::mpsc::SyncSender<audio::AudioSegment> {
     let (tx, rx) = std::sync::mpsc::sync_channel::<audio::AudioSegment>(3);
     std::thread::spawn(move || {
-        let provider = match provider::OpenAiProvider::new(key, transcription_model, text_model) {
+        let provider = match provider::OpenAiProvider::new(
+            key.clone(),
+            transcription_model.clone(),
+            text_model.clone(),
+        ) {
             Ok(p) => p,
             Err(e) => {
                 let _ = app.emit("pipeline-status", e);
                 return;
             }
         };
+        let translation_provider =
+            match provider::OpenAiProvider::new(key, transcription_model, text_model) {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = app.emit("pipeline-status", e);
+                    return;
+                }
+            };
+        let (translation_tx, translation_rx) = std::sync::mpsc::sync_channel::<(
+            scheduler::Subtitle,
+            String,
+            Vec<String>,
+            std::time::Instant,
+        )>(2);
+        let translation_app = app.clone();
+        std::thread::spawn(move || {
+            while let Ok((base, japanese, recent, started)) = translation_rx.recv() {
+                if translation_app
+                    .state::<AppState>()
+                    .generation
+                    .load(Ordering::SeqCst)
+                    != generation
+                {
+                    return;
+                }
+                match translation_provider.translate(&japanese, &target, &recent) {
+                    Ok(text) => {
+                        if translation_app
+                            .state::<AppState>()
+                            .generation
+                            .load(Ordering::SeqCst)
+                            != generation
+                        {
+                            return;
+                        }
+                        let _ = translation_app.emit(
+                            "subtitle-update",
+                            scheduler::Subtitle {
+                                romaji: Some(text.romaji),
+                                translation: Some(text.translation),
+                                translation_latency_ms: Some(started.elapsed().as_millis() as u64),
+                                ..base
+                            },
+                        );
+                    }
+                    Err(e) => {
+                        let _ = translation_app
+                            .emit("pipeline-status", format!("Translation failed: {e}"));
+                        if e.contains("429") {
+                            translation_app.state::<AppState>().cancel();
+                            let _ = translation_app.emit(
+                                "pipeline-status",
+                                "OpenAI quota or rate limit reached · processing paused",
+                            );
+                            return;
+                        }
+                    }
+                }
+            }
+        });
         let session = uuid::Uuid::new_v4().to_string();
         let mut segment_id = 0u64;
         let mut recent: Vec<String> = vec![];
@@ -182,40 +246,19 @@ fn spawn_pipeline(
                         translation_latency_ms: None,
                     };
                     let _ = app.emit("subtitle-update", base.clone());
-                    match provider.translate(&japanese, &target, &recent) {
-                        Ok(text) => {
-                            if app.state::<AppState>().generation.load(Ordering::SeqCst)
-                                != generation
-                            {
-                                return;
-                            }
-                            let _ = app.emit(
-                                "subtitle-update",
-                                scheduler::Subtitle {
-                                    romaji: Some(text.romaji),
-                                    translation: Some(text.translation),
-                                    translation_latency_ms: Some(
-                                        started.elapsed().as_millis() as u64
-                                    ),
-                                    ..base
-                                },
-                            );
-                            recent.push(japanese);
-                            if recent.len() > 4 {
-                                recent.remove(0);
-                            }
-                        }
-                        Err(e) => {
-                            let _ = app.emit("pipeline-status", format!("Translation failed: {e}"));
-                            if e.contains("429") {
-                                app.state::<AppState>().cancel();
-                                let _ = app.emit(
-                                    "pipeline-status",
-                                    "OpenAI quota or rate limit reached · processing paused",
-                                );
-                                return;
-                            }
-                        }
+                    let context = recent.clone();
+                    recent.push(japanese.clone());
+                    if recent.len() > 4 {
+                        recent.remove(0);
+                    }
+                    if translation_tx
+                        .try_send((base, japanese, context, started))
+                        .is_err()
+                    {
+                        let _ = app.emit(
+                            "pipeline-status",
+                            "Translation queue full · keeping live Japanese captions current",
+                        );
                     }
                 }
                 Err(e) => {

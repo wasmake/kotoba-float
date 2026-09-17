@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AlertTriangle, Check, CircleOff, Headphones, RefreshCw, ShieldCheck } from 'lucide-react'
-import type { AudioSource, Capabilities, Settings } from '../types'
+import { CALL_CAPTION_PRESET, type AudioSource, type Capabilities, type Settings } from '../types'
 
 export function SettingsPanel({ settings, setSettings, sources, capabilities, level, refresh, testCapture, connect, testConnection, disconnect }: { settings: Settings; setSettings(s: Settings): void; sources: AudioSource[]; capabilities?: Capabilities; level: number; refresh(): void; testCapture(): void; connect(key:string):Promise<void>; testConnection():Promise<void>; disconnect():Promise<void> }) {
   const [apiKey,setApiKey]=useState(''),[connectionBusy,setConnectionBusy]=useState(false),[connectionError,setConnectionError]=useState('')
@@ -29,9 +29,12 @@ export function SettingsPanel({ settings, setSettings, sources, capabilities, le
       <label>Romaji & translation model<input className="text-input" value={settings.textModel} onChange={e=>patch({textModel:e.target.value})}/></label>
     </section>
     <section className="card"><span className="eyebrow">SEGMENTATION</span><h2>Latency tuning</h2>
-      <Range label="Trailing silence" value={settings.trailingSilenceMs} min={400} max={700} unit="ms" onChange={v => patch({ trailingSilenceMs: v })}/>
-      <Range label="Maximum segment" value={settings.maxSegmentMs} min={3000} max={10000} step={500} unit="ms" onChange={v => patch({ maxSegmentMs: v })}/>
-      <Range label="Pre-roll" value={settings.preRollMs} min={100} max={500} unit="ms" onChange={v => patch({ preRollMs: v })}/>
+      <button className="preset" onClick={() => patch(CALL_CAPTION_PRESET)}>Use call-caption preset</button>
+      <small>Optimized for streamed speech: short utterances, fast transcription, and low-cost translation.</small>
+      <Range label="Trailing silence" value={settings.trailingSilenceMs} min={150} max={700} step={25} unit="ms" onChange={v => patch({ trailingSilenceMs: v })}/>
+      <Range label="Maximum segment" value={settings.maxSegmentMs} min={1500} max={10000} step={100} unit="ms" onChange={v => patch({ maxSegmentMs: v })}/>
+      <Range label="Pre-roll" value={settings.preRollMs} min={50} max={500} step={10} unit="ms" onChange={v => patch({ preRollMs: v })}/>
+      <small>Chrome/Edge speech extensions cannot be embedded in Tauri. Fully local STT requires a separately downloaded on-device model and is not enabled by this preset.</small>
     </section>
     <section className="card wide"><span className="eyebrow">OVERLAY</span><h2>Appearance</h2><div className="appearance-grid">
       <Range label="Japanese" value={settings.appearance.japaneseSize} min={22} max={64} unit="px" onChange={v => appearance({ japaneseSize: v })}/><Range label="Romaji" value={settings.appearance.romajiSize} min={12} max={36} unit="px" onChange={v => appearance({ romajiSize: v })}/><Range label="Translation" value={settings.appearance.translationSize} min={16} max={48} unit="px" onChange={v => appearance({ translationSize: v })}/><Range label="Backing" value={Math.round(settings.appearance.backingOpacity * 100)} min={0} max={90} unit="%" onChange={v => appearance({ backingOpacity: v / 100 })}/></div>
