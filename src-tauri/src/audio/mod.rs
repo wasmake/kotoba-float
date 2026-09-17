@@ -24,31 +24,16 @@ pub struct AudioSegment {
     pub end_ms: u64,
 }
 pub struct CaptureHandle {
-    input: Option<cpal::Stream>,
-    stop: Option<Arc<AtomicBool>>,
-    #[cfg(target_os = "macos")]
-    mac_stream: Option<screencapturekit::prelude::SCStream>,
+    stop: Arc<AtomicBool>,
 }
 impl CaptureHandle {
-    fn input(stream: cpal::Stream) -> Self {
-        Self {
-            input: Some(stream),
-            stop: None,
-            #[cfg(target_os = "macos")]
-            mac_stream: None,
-        }
+    fn new(stop: Arc<AtomicBool>) -> Self {
+        Self { stop }
     }
 }
 impl Drop for CaptureHandle {
     fn drop(&mut self) {
-        if let Some(stop) = &self.stop {
-            stop.store(true, Ordering::SeqCst)
-        }
-        #[cfg(target_os = "macos")]
-        if let Some(stream) = self.mac_stream.as_mut() {
-            let _ = stream.stop_capture();
-        }
-        self.input.take();
+        self.stop.store(true, Ordering::SeqCst)
     }
 }
 
@@ -99,7 +84,7 @@ pub fn start_capture(
     if !source_id.starts_with("input:") {
         return Err("Selected native capture source is unavailable on this platform".into());
     }
-    start_input(app, source_id, trailing, max, pre, output).map(CaptureHandle::input)
+    start_input(app, source_id, trailing, max, pre, output)
 }
 fn start_input(
     app: AppHandle,
@@ -108,12 +93,49 @@ fn start_input(
     max: u64,
     pre: u64,
     output: Option<SyncSender<AudioSegment>>,
-) -> Result<cpal::Stream, String> {
+) -> Result<CaptureHandle, String> {
     let index: usize = source_id
         .strip_prefix("input:")
         .ok_or("Selected native source adapter is unavailable in this build")?
         .parse()
         .map_err(|_| "Invalid source")?;
+    let stop = Arc::new(AtomicBool::new(false));
+    let thread_stop = stop.clone();
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
+    std::thread::Builder::new()
+        .name("audio-input".into())
+        .spawn(move || {
+            let result = run_input(app, index, trailing, max, pre, output);
+            match result {
+                Ok(stream) => {
+                    if ready_tx.send(Ok(())).is_err() {
+                        return;
+                    }
+                    while !thread_stop.load(Ordering::SeqCst) {
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                    drop(stream);
+                }
+                Err(error) => {
+                    let _ = ready_tx.send(Err(error));
+                }
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    ready_rx
+        .recv()
+        .map_err(|_| "Audio input thread stopped during startup".to_string())??;
+    Ok(CaptureHandle::new(stop))
+}
+
+fn run_input(
+    app: AppHandle,
+    index: usize,
+    trailing: u64,
+    max: u64,
+    pre: u64,
+    output: Option<SyncSender<AudioSegment>>,
+) -> Result<cpal::Stream, String> {
     let host = cpal::default_host();
     let device = host
         .input_devices()
@@ -279,10 +301,7 @@ mod platform {
                 }
             })
             .map_err(|e| e.to_string())?;
-        Ok(CaptureHandle {
-            input: None,
-            stop: Some(stop),
-        })
+        Ok(CaptureHandle::new(stop))
     }
     fn run(
         app: AppHandle,
@@ -292,7 +311,7 @@ mod platform {
         pre: u64,
         output: Option<SyncSender<AudioSegment>>,
     ) -> Result<(), String> {
-        initialize_mta().map_err(|e| e.to_string())?;
+        initialize_mta().ok().map_err(|e| e.to_string())?;
         let enumerator = DeviceEnumerator::new().map_err(|e| e.to_string())?;
         let device = enumerator
             .get_default_device(&Direction::Render)
@@ -342,7 +361,11 @@ mod platform {
     use super::{process, AudioSegment, AudioSource, CaptureHandle};
     use crate::vad::Segmenter;
     use screencapturekit::prelude::*;
-    use std::sync::{mpsc::SyncSender, Arc, Mutex};
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::SyncSender,
+        Arc, Mutex,
+    };
     use tauri::AppHandle;
     pub fn native_sources() -> Vec<AudioSource> {
         vec![AudioSource{id:"sck:system".into(),name:"macOS system audio (built-in ScreenCaptureKit)".into(),kind:"system".into(),available:true,detail:"Captures the system mix on macOS 13+ after Screen & System Audio Recording consent. It requires no BlackHole device.".into()},AudioSource{id:"sck:application".into(),name:"Application audio (ScreenCaptureKit filter)".into(),kind:"application".into(),available:false,detail:"Application-only selection is not yet exposed; system capture includes every audible application.".into()}]
@@ -386,6 +409,42 @@ mod platform {
         pre: u64,
         output: Option<SyncSender<AudioSegment>>,
     ) -> Result<CaptureHandle, String> {
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread_stop = stop.clone();
+        let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
+        std::thread::Builder::new()
+            .name("screencapturekit-audio".into())
+            .spawn(
+                move || match create_stream(app, trailing, max, pre, output) {
+                    Ok(mut stream) => {
+                        if ready_tx.send(Ok(())).is_err() {
+                            let _ = stream.stop_capture();
+                            return;
+                        }
+                        while !thread_stop.load(Ordering::SeqCst) {
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                        }
+                        let _ = stream.stop_capture();
+                    }
+                    Err(error) => {
+                        let _ = ready_tx.send(Err(error));
+                    }
+                },
+            )
+            .map_err(|e| e.to_string())?;
+        ready_rx
+            .recv()
+            .map_err(|_| "ScreenCaptureKit thread stopped during startup".to_string())??;
+        Ok(CaptureHandle::new(stop))
+    }
+
+    fn create_stream(
+        app: AppHandle,
+        trailing: u64,
+        max: u64,
+        pre: u64,
+        output: Option<SyncSender<AudioSegment>>,
+    ) -> Result<SCStream, String> {
         let content = SCShareableContent::get().map_err(|e| e.to_string())?;
         let display = content
             .displays()
@@ -414,11 +473,7 @@ mod platform {
         stream
             .start_capture()
             .map_err(|e| format!("ScreenCaptureKit permission or capture error: {e}"))?;
-        Ok(CaptureHandle {
-            input: None,
-            stop: None,
-            mac_stream: Some(stream),
-        })
+        Ok(stream)
     }
 }
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]

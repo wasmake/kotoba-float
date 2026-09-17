@@ -30,7 +30,7 @@ jobs:
             rust_targets: x86_64-pc-windows-msvc
             tauri_args: "--target x86_64-pc-windows-msvc --bundles nsis,msi"
           - name: macOS Universal
-            platform: macos-14
+            platform: macos-15
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
             tauri_args: "--target universal-apple-darwin --bundles app,dmg"
           - name: Linux x64
